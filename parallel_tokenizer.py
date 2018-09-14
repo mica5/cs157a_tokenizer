@@ -18,25 +18,25 @@ def get_contents():
     for file in files:
         with open(file, 'r') as fr:
             content = fr.read()
-            for c in content.split('----------------------'):
-                if c.startswith(' Forwarded'):
+            for content_part in content.split('----------------------'):
+                if content_part.startswith(' Forwarded'):
                     continue
-                if max(map(len, c.split('\n'))) < 70:
+                if max(map(len, content_part.split('\n'))) < 70:
                     continue
-                if 'Message-ID' in c:
+                if 'Message-ID' in content_part:
                     continue
-                if 'From: ' in c:
+                if 'From: ' in content_part:
                     continue
                 lines = list()
                 capturing = False
-                for line in c.split('\n'):
+                for line in content_part.split('\n'):
                     if capturing:
                         lines.append(line)
                     elif line.startswith('Subject:'):
                         capturing = True
                         continue
-                nc = '\n'.join(lines)
-                yield nc
+                new_content = '\n'.join(lines)
+                yield new_content
 
 def get_contents_simple():
     yield 'the cat sang'
