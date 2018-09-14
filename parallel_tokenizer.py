@@ -78,6 +78,10 @@ def update_documents_per_term(new_found_words, word_to_index, foundword_indices,
             foundword_indices.add(i)
             i += 1
 
+    # e.g. (this example uses strings as keys instead of
+    # their integer index counterparts, so as to improve readability):
+    # {'a': 1, 'dog': 2}.update({'dog', 'banana'})
+    # -> {'a': 1, 'dog': 3, 'banana': 1}
     documents_per_term.update(foundword_indices)
     return i
 
