@@ -65,9 +65,6 @@ def process_contents(content, word_to_index):
             new_found_words.add(word)
     return found_indices, new_found_words, wordcount
 
-def do_work(content, word_to_index):
-    return process_contents(content, word_to_index)
-
 def update_documents_per_term(new_found_words, word_to_index, foundword_indices, documents_per_term, i):
     for word in new_found_words:
         # word_to_index = {'a': 1, 'banana': 2}
@@ -94,7 +91,7 @@ def create_new_worker(content_generator, word_to_index, pool, workers):
         return had_more_work
     workers.append(
         pool.apply_async(
-            do_work,
+            process_contents,
             (content, word_to_index),
         )
     )
