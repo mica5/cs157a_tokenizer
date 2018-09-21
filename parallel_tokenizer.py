@@ -5,6 +5,8 @@ import re
 from collections import Counter
 from multiprocessing import Pool
 import urllib
+from glob import glob
+import os
 
 import requests
 from bs4 import BeautifulSoup
@@ -12,6 +14,25 @@ from nltk.stem import PorterStemmer
 
 ps = PorterStemmer()
 find_words_re = re.compile(r'''([a-zA-Z]+([^a-zA-Z\s]+[a-zA-Z]+)?)''')
+
+
+
+def get_dr_lin_document_contents_local(directory='./documents'):
+    for file in glob(os.path.join(directory, '*')):
+        with open(file, 'r') as fr:
+            yield fr.read()
+
+def get_dr_lin_document_contents(url='http://xanadu.cs.sjsu.edu/~drtylin/classes/cs157A/Project/temp_data/'):
+    resp = requests.get(url)
+    bs = BeautifulSoup(resp.content.decode(), features='html.parser')
+
+    for a in bs.findAll('a'):
+        this_url = a.attrs['href']
+        if not this_url.endswith('.txt'):
+            continue
+        this_url = urllib.parse.urljoin(url, a.attrs['href'])
+        doc = requests.get(this_url)
+        yield doc.content.decode()
 
 def get_contents():
     files = subprocess.check_output(
@@ -46,17 +67,6 @@ def get_contents_simple():
     yield 'the dog sang'
     yield 'the the the'
 
-def get_dr_lin_document_contents(url='http://xanadu.cs.sjsu.edu/~drtylin/classes/cs157A/Project/temp_data/'):
-    resp = requests.get(url)
-    bs = BeautifulSoup(resp.content.decode(), features='html.parser')
-
-    for a in bs.findAll('a'):
-        this_url = a.attrs['href']
-        if not this_url.endswith('.txt'):
-            continue
-        this_url = urllib.parse.urljoin(url, a.attrs['href'])
-        doc = requests.get(this_url)
-        yield doc.content.decode()
 
 def process_contents(content, word_to_index, document_id, word__idorstr__to_count):
     """
@@ -157,7 +167,8 @@ def run_tokenize(process_count=8):
     total_document_count = 0
     word_to_index = dict()
     # content_generator = get_contents()
-    content_generator = get_dr_lin_document_contents()
+    # content_generator = get_dr_lin_document_contents()
+    content_generator = get_dr_lin_document_contents_local(directory='/Users/mica/db/project/cs157a_tokenizer/documents')
 
     workers = list()
     pool = Pool(processes=process_count)
@@ -205,7 +216,7 @@ def run_tokenize(process_count=8):
         for word_index in word_indices:
             word = index_to_word[word_index]
             token_id__token__document_id_results.append((word_index, word, docid))
-    print(token_id__token__document_id_results)
+    # print(token_id__token__document_id_results)
     # Make a table of tokens where the tuple is (doc_id, TFIDF ratio).
     doc_id__TFIDF_ratio_results = list()
     for documentid, word__idorstr__to_count in documentid_to_word__idorstr__to_count.documentid_to_word__idorstr__to_count.items():
@@ -220,13 +231,13 @@ def run_tokenize(process_count=8):
             tfidf = term_frequency / document_frequency
 
             doc_id__TFIDF_ratio_results.append((documentid, word, tfidf))
-    print(doc_id__TFIDF_ratio_results)
-
-    print('total_document_count:', total_document_count)
-    print('total_word_count:', total_word_count)
-    print('average words per document: {:.2f}'.format(total_word_count / total_document_count))
-    for word_index, count in documents_per_term.most_common():
-        print((index_to_word[word_index], count, math.log(total_document_count/count)))
+    # print(doc_id__TFIDF_ratio_results)
+    #
+    # print('total_document_count:', total_document_count)
+    # print('total_word_count:', total_word_count)
+    # print('average words per document: {:.2f}'.format(total_word_count / total_document_count))
+    # for word_index, count in documents_per_term.most_common():
+    #     print((index_to_word[word_index], count, math.log(total_document_count/count)))
 
 if __name__ == '__main__':
     run_tokenize(process_count=8)
