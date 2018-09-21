@@ -4,7 +4,10 @@ import math
 import re
 from collections import Counter
 from multiprocessing import Pool
+import urllib
 
+import requests
+from bs4 import BeautifulSoup
 from nltk.stem import PorterStemmer
 
 ps = PorterStemmer()
@@ -43,7 +46,19 @@ def get_contents_simple():
     yield 'the dog sang'
     yield 'the the the'
 
-def process_contents(content, word_to_index):
+def get_dr_lin_document_contents(url='http://xanadu.cs.sjsu.edu/~drtylin/classes/cs157A/Project/temp_data/'):
+    resp = requests.get(url)
+    bs = BeautifulSoup(resp.content.decode(), features='html.parser')
+
+    for a in bs.findAll('a'):
+        this_url = a.attrs['href']
+        if not this_url.endswith('.txt'):
+            continue
+        this_url = urllib.parse.urljoin(url, a.attrs['href'])
+        doc = requests.get(this_url)
+        yield doc.content.decode()
+
+def process_contents(content, word_to_index, document_id, word__idorstr__to_count):
     """
     input:
         content: "the cat sang"
@@ -61,32 +76,42 @@ def process_contents(content, word_to_index):
         word_index = word_to_index.get(word, None)
         if word_index is not None:
             found_indices.add(word_index)
+            word__idorstr__to_count.increment(word_index)
         else:
             new_found_words.add(word)
-    return found_indices, new_found_words, wordcount
+            word__idorstr__to_count.increment(word)
 
-def update_documents_per_term(new_found_words, word_to_index, foundword_indices, documents_per_term, i):
+    return found_indices, new_found_words, wordcount, document_id, word__idorstr__to_count
+
+def update_documents_per_term(
+    new_found_words, word_to_index, found_word__indices,
+    documents_per_term, i, docid_to_word_indices, document_id,
+):
     for word in new_found_words:
         # word_to_index = {'a': 1, 'banana': 2}
         index = word_to_index.get(word, None)
         if index is not None:
-            foundword_indices.add(index)
+            found_word__indices.add(index)
         else:
-            # word_to_index['cheese'] = 3
-            word_to_index[word] = i
-            # foundword_indices.add(3)
-            foundword_indices.add(i)
+            # e.g. word_to_index['cheese'] = 3
+            word_to_index[word] = index = i
+            # e.g. found_word__indices.add(3)
+            found_word__indices.add(i)
             i += 1
+        if document_id in docid_to_word_indices:
+            docid_to_word_indices[document_id].add(index)
+        else:
+            docid_to_word_indices[document_id] = {index}
 
     # e.g. (this example uses strings as keys instead of
     # their integer index counterparts, so as to improve readability):
     # {'a': 1, 'dog': 2}.update({'dog', 'banana'})
     # -> {'a': 1, 'dog': 3, 'banana': 1}
-    documents_per_term.update(foundword_indices)
+    documents_per_term.update(found_word__indices)
     return i
 
 
-def create_new_worker(content_generator, word_to_index, pool, workers):
+def create_new_worker(content_generator, word_to_index, pool, workers, document_id, word__idorstr__to_count):
     had_more_work = True
     try:
         content = next(content_generator)
@@ -96,50 +121,112 @@ def create_new_worker(content_generator, word_to_index, pool, workers):
     workers.append(
         pool.apply_async(
             process_contents,
-            (content, word_to_index),
+            (content, word_to_index, document_id, word__idorstr__to_count),
         )
     )
     return had_more_work
+
+class Word__idorstr__to_count:
+    def __init__(self):
+        self.word__idorstr__to_count = dict()
+    def increment(self, word__idorstr):
+        if word__idorstr not in self.word__idorstr__to_count:
+            self.word__idorstr__to_count[word__idorstr] = 1
+        else:
+            self.word__idorstr__to_count[word__idorstr] += 1
+
+class Documentid_to_word__idorstr__to_count:
+    def __init__(self):
+        self.documentid_to_word__idorstr__to_count = dict()
+
+    def add_document(self, docid, word__idorstr__to_count):
+        self.documentid_to_word__idorstr__to_count[docid] = word__idorstr__to_count.word__idorstr__to_count
+
+    def increment(self, docid, word__idorstr):
+
+        if docid not in self.documentid_to_word__idorstr__to_count:
+            self.documentid_to_word__idorstr__to_count[docid] = dict()
+
+        if word__idorstr in self.documentid_to_word__idorstr__to_count[docid]:
+            self.documentid_to_word__idorstr__to_count[docid][word__idorstr] += 1
+        else:
+            self.documentid_to_word__idorstr__to_count[docid][word__idorstr] = 1
 
 def run_tokenize(process_count=8):
     documents_per_term = Counter()
     total_document_count = 0
     word_to_index = dict()
-    content_generator = get_contents()
+    # content_generator = get_contents()
+    content_generator = get_dr_lin_document_contents()
 
     workers = list()
     pool = Pool(processes=process_count)
 
+    word__idorstr__to_count = Word__idorstr__to_count()
+    document_id = 0
     for i in range(process_count):
         had_more_content = create_new_worker(
-            content_generator, word_to_index, pool, workers
+            content_generator, word_to_index, pool, workers, document_id, word__idorstr__to_count
         )
+        document_id += 1
         if not had_more_content:
             break
         total_document_count += 1
 
     i = 0
     total_word_count = 0
+    docid_to_word_indices = dict()
+    documentid_to_word__idorstr__to_count = Documentid_to_word__idorstr__to_count()
     while workers:
         worker = workers.pop(0)
+
         # this worker isn't done, so check the next worker
         if not worker.ready():
             workers.append(worker)
-        # this worker is done, so process the results and create a new worker
-        else:
-            had_more_work = create_new_worker(content_generator, word_to_index, pool, workers)
-            if had_more_work:
-                total_document_count += 1
-            found_indices, new_found_words, wordcount = worker.get()
-            total_word_count += wordcount
-            i = update_documents_per_term(new_found_words, word_to_index, found_indices, documents_per_term, i)
 
+        # this worker is done, so process the results and create a new worker
+        had_more_work = create_new_worker(content_generator, word_to_index, pool, workers, document_id, word__idorstr__to_count)
+        if had_more_work:
+            total_document_count += 1
+        found_indices, new_found_words, wordcount, document_id, word__idorstr__to_count = worker.get()
+        documentid_to_word__idorstr__to_count.add_document(document_id, word__idorstr__to_count)
+
+        total_word_count += wordcount
+        i = update_documents_per_term(
+            new_found_words, word_to_index, found_indices,
+            documents_per_term, i, docid_to_word_indices,
+            document_id,
+        )
+
+    # find a tokenizer to turn every file into a tuple of (token_id, token, document_id)
     index_to_word = {v: k for k, v in word_to_index.items()}
+    token_id__token__document_id_results = list()
+    for docid, word_indices in docid_to_word_indices.items():
+        for word_index in word_indices:
+            word = index_to_word[word_index]
+            token_id__token__document_id_results.append((word_index, word, docid))
+    print(token_id__token__document_id_results)
+    # Make a table of tokens where the tuple is (doc_id, TFIDF ratio).
+    doc_id__TFIDF_ratio_results = list()
+    for documentid, word__idorstr__to_count in documentid_to_word__idorstr__to_count.documentid_to_word__idorstr__to_count.items():
+        for word__idorstr, term_frequency in word__idorstr__to_count.items():
+            if isinstance(word__idorstr, int):
+                word = index_to_word[word__idorstr]
+            else:
+                word = word__idorstr
+            word_index = word_to_index[word]
+
+            document_frequency = documents_per_term[word_index]
+            tfidf = term_frequency / document_frequency
+
+            doc_id__TFIDF_ratio_results.append((documentid, word, tfidf))
+    print(doc_id__TFIDF_ratio_results)
+
     print('total_document_count:', total_document_count)
     print('total_word_count:', total_word_count)
     print('average words per document: {:.2f}'.format(total_word_count / total_document_count))
-    # for word_index, count in documents_per_term.most_common():
-    #     print((index_to_word[word_index], count, math.log(total_document_count/count)))
+    for word_index, count in documents_per_term.most_common():
+        print((index_to_word[word_index], count, math.log(total_document_count/count)))
 
 if __name__ == '__main__':
     run_tokenize(process_count=8)
