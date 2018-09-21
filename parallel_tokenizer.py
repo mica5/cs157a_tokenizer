@@ -216,7 +216,8 @@ def run_tokenize(process_count=8):
         for word_index in word_indices:
             word = index_to_word[word_index]
             token_id__token__document_id_results.append((word_index, word, docid))
-    # print(token_id__token__document_id_results)
+    print(token_id__token__document_id_results)
+
     # Make a table of tokens where the tuple is (doc_id, TFIDF ratio).
     doc_id__TFIDF_ratio_results = list()
     for documentid, word__idorstr__to_count in documentid_to_word__idorstr__to_count.documentid_to_word__idorstr__to_count.items():
@@ -231,13 +232,13 @@ def run_tokenize(process_count=8):
             tfidf = term_frequency / document_frequency
 
             doc_id__TFIDF_ratio_results.append((documentid, word, tfidf))
-    # print(doc_id__TFIDF_ratio_results)
-    #
-    # print('total_document_count:', total_document_count)
-    # print('total_word_count:', total_word_count)
-    # print('average words per document: {:.2f}'.format(total_word_count / total_document_count))
-    # for word_index, count in documents_per_term.most_common():
-    #     print((index_to_word[word_index], count, math.log(total_document_count/count)))
+    print(doc_id__TFIDF_ratio_results)
+
+    print('total_document_count:', total_document_count)
+    print('total_word_count:', total_word_count)
+    print('average words per document: {:.2f}'.format(total_word_count / total_document_count))
+    for word_index, count in documents_per_term.most_common():
+        print((index_to_word[word_index], count, math.log(total_document_count/count)))
 
 if __name__ == '__main__':
     run_tokenize(process_count=8)
