@@ -1,4 +1,13 @@
 #!/usr/bin/env python
+"""Tokenizer
+
+Runs in parallel, reads from local file system (but could easily
+be modified to read from the internet, as there are already functions
+for that).
+
+Version 0.1
+2018-09-20
+"""
 import subprocess
 import math
 import re
@@ -7,10 +16,13 @@ from multiprocessing import Pool
 import urllib
 from glob import glob
 import os
+import argparse
 
 import requests
 from bs4 import BeautifulSoup
 from nltk.stem import PorterStemmer
+
+
 
 ps = PorterStemmer()
 find_words_re = re.compile(r'''([a-zA-Z]+([^a-zA-Z\s]+[a-zA-Z]+)?)''')
@@ -162,13 +174,13 @@ class Documentid_to_word__idorstr__to_count:
         else:
             self.documentid_to_word__idorstr__to_count[docid][word__idorstr] = 1
 
-def run_tokenize(process_count=8):
+def run_tokenize(directory, process_count=8):
     documents_per_term = Counter()
     total_document_count = 0
     word_to_index = dict()
     # content_generator = get_contents()
     # content_generator = get_dr_lin_document_contents()
-    content_generator = get_dr_lin_document_contents_local(directory='/Users/mica/db/project/cs157a_tokenizer/documents')
+    content_generator = get_dr_lin_document_contents_local(directory=directory)
 
     workers = list()
     pool = Pool(processes=process_count)
@@ -240,5 +252,33 @@ def run_tokenize(process_count=8):
     for word_index, count in documents_per_term.most_common():
         print((index_to_word[word_index], count, math.log(total_document_count/count)))
 
+def run_main():
+    args = parse_cl_args()
+
+    run_tokenize(args.directory, process_count=args.num_workers)
+
+    success = True
+    return success
+
+def parse_cl_args():
+    argParser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+
+    argParser.add_argument(
+        'directory',
+        help="directory containing text files that are to be read\n"
+            "and tokenized"
+    )
+    argParser.add_argument('--num-workers', default=8, type=int)
+
+    args = argParser.parse_args()
+    return args
+
+
 if __name__ == '__main__':
-    run_tokenize(process_count=8)
+    success = run_main()
+    exit_code = 0 if success else 1
+    exit(exit_code)
+
