@@ -25,14 +25,27 @@ from nltk.stem import PorterStemmer
 
 
 ps = PorterStemmer()
-find_words_re = re.compile(r'''([a-zA-Z]+([^a-zA-Z\s]+[a-zA-Z]+)?)''')
+find_words_re = re.compile(
+    r'('
+        r'[-a-zA-Z]+'
+        # r'('
+        #     r'[^a-zA-Z\s]+'
+        #     r'[a-zA-Z]+'
+        # r')?'
+    r')'
+)
 
 
 
-def get_dr_lin_document_contents_local(directory='./documents'):
-    for file in glob(os.path.join(directory, '*')):
-        with open(file, 'r') as fr:
-            yield fr.read()
+def get_dr_lin_document_contents_local(files_or_dirs=['./documents']):
+    for file_or_dir in files_or_dirs:
+        if os.path.exists(file_or_dir):
+            with open(file_or_dir, 'r') as fr:
+                yield fr.read()
+        else:
+            for file in glob(os.path.join(file_or_dir, '*')):
+                with open(file, 'r') as fr:
+                    yield fr.read()
 
 def get_dr_lin_document_contents(url='http://xanadu.cs.sjsu.edu/~drtylin/classes/cs157A/Project/temp_data/'):
     resp = requests.get(url)
@@ -91,9 +104,9 @@ def process_contents(content, word_to_index, document_id, word__idorstr__to_coun
     """
     new_found_words = set()
     found_indices = set()
-    wordcount = 0
+    total_word_count_this_document = 0
     for m in find_words_re.finditer(content):
-        wordcount += 1
+        total_word_count_this_document += 1
         word = ps.stem(m.group(1).lower())
         word_index = word_to_index.get(word, None)
         if word_index is not None:
@@ -103,12 +116,23 @@ def process_contents(content, word_to_index, document_id, word__idorstr__to_coun
             new_found_words.add(word)
             word__idorstr__to_count.increment(word)
 
-    return found_indices, new_found_words, wordcount, document_id, word__idorstr__to_count
+    return found_indices, new_found_words, total_word_count_this_document, document_id, word__idorstr__to_count
 
 def update_documents_per_term(
     new_found_words, word_to_index, found_word__indices,
-    documents_per_term, i, docid_to_word_indices, document_id,
+    word_index_to_doc_count_per_word, i, docid_to_word_indices, document_id,
 ):
+    """
+    found_word__indices is a set of the indices of the unique words
+    that were found in a particular document. however, not all words
+    had indices that corresponded to them at the time the worker
+    was working, so this also takes the non-indexed words the worker
+    found, gives them an index, and converts those from word counts to
+    index counts.
+
+    word_index_to_doc_count_per_word is {word index: number of documents the
+    word appears in}.
+    """
     for word in new_found_words:
         # word_to_index = {'a': 1, 'banana': 2}
         index = word_to_index.get(word, None)
@@ -129,7 +153,7 @@ def update_documents_per_term(
     # their integer index counterparts, so as to improve readability):
     # {'a': 1, 'dog': 2}.update({'dog', 'banana'})
     # -> {'a': 1, 'dog': 3, 'banana': 1}
-    documents_per_term.update(found_word__indices)
+    word_index_to_doc_count_per_word.update(found_word__indices)
     return i
 
 
@@ -174,13 +198,14 @@ class Documentid_to_word__idorstr__to_count:
         else:
             self.documentid_to_word__idorstr__to_count[docid][word__idorstr] = 1
 
-def run_tokenize(directory, process_count=8):
-    documents_per_term = Counter()
-    total_document_count = 0
+def run_tokenize(files_or_dirs, process_count=8, do_print=True):
+    # word_index_to_doc_count_per_word is {word index: number of documents the word appears in}.
+    word_index_to_doc_count_per_word = Counter()
+    total_number_of_documents = 0
     word_to_index = dict()
     # content_generator = get_contents()
     # content_generator = get_dr_lin_document_contents()
-    content_generator = get_dr_lin_document_contents_local(directory=directory)
+    content_generator = get_dr_lin_document_contents_local(files_or_dirs=files_or_dirs)
 
     workers = list()
     pool = Pool(processes=process_count)
@@ -194,10 +219,10 @@ def run_tokenize(directory, process_count=8):
         document_id += 1
         if not had_more_content:
             break
-        total_document_count += 1
+        total_number_of_documents += 1
 
     i = 0
-    total_word_count = 0
+    total_word_count_all_documents = 0
     docid_to_word_indices = dict()
     documentid_to_word__idorstr__to_count = Documentid_to_word__idorstr__to_count()
     while workers:
@@ -206,18 +231,20 @@ def run_tokenize(directory, process_count=8):
         # this worker isn't done, so check the next worker
         if not worker.ready():
             workers.append(worker)
+            continue
 
         # this worker is done, so process the results and create a new worker
         had_more_work = create_new_worker(content_generator, word_to_index, pool, workers, document_id, word__idorstr__to_count)
         if had_more_work:
-            total_document_count += 1
-        found_indices, new_found_words, wordcount, document_id, word__idorstr__to_count = worker.get()
+            total_number_of_documents += 1
+        # found_indices is a set
+        found_indices, new_found_words, total_word_count_this_document, document_id, word__idorstr__to_count = worker.get()
         documentid_to_word__idorstr__to_count.add_document(document_id, word__idorstr__to_count)
 
-        total_word_count += wordcount
+        total_word_count_all_documents += total_word_count_this_document
         i = update_documents_per_term(
             new_found_words, word_to_index, found_indices,
-            documents_per_term, i, docid_to_word_indices,
+            word_index_to_doc_count_per_word, i, docid_to_word_indices,
             document_id,
         )
 
@@ -228,7 +255,8 @@ def run_tokenize(directory, process_count=8):
         for word_index in word_indices:
             word = index_to_word[word_index]
             token_id__token__document_id_results.append((word_index, word, docid))
-    print(token_id__token__document_id_results)
+    if do_print:
+        print('token_id__token__document_id_results:', token_id__token__document_id_results)
 
     # Make a table of tokens where the tuple is (doc_id, TFIDF ratio).
     doc_id__TFIDF_ratio_results = list()
@@ -240,22 +268,27 @@ def run_tokenize(directory, process_count=8):
                 word = word__idorstr
             word_index = word_to_index[word]
 
-            document_frequency = documents_per_term[word_index]
+            # total number of documents the word appears in
+            document_frequency = word_index_to_doc_count_per_word[word_index]
             tfidf = term_frequency / document_frequency
 
             doc_id__TFIDF_ratio_results.append((documentid, word, tfidf))
-    print(doc_id__TFIDF_ratio_results)
 
-    print('total_document_count:', total_document_count)
-    print('total_word_count:', total_word_count)
-    print('average words per document: {:.2f}'.format(total_word_count / total_document_count))
-    for word_index, count in documents_per_term.most_common():
-        print((index_to_word[word_index], count, math.log(total_document_count/count)))
+    if do_print:
+        print('doc_id__TFIDF_ratio_results (doc_id__TFIDF_ratio_results):', doc_id__TFIDF_ratio_results)
+        print('total_number_of_documents (total_number_of_documents):', total_number_of_documents)
+        print('total_word_count_all_documents (total_word_count_all_documents):', total_word_count_all_documents)
+        print('average number of words per document (total_word_count_all_documents / total_number_of_documents): {:.2f}'.format(total_word_count_all_documents / total_number_of_documents))
+
+        print("word, total number of documents the word appears in, tf-idf (math.log(total_number_of_documents/count))")
+        for word_index, count in word_index_to_doc_count_per_word.most_common():
+            print((index_to_word[word_index], count, math.log(total_number_of_documents/count)))
 
 def run_main():
     args = parse_cl_args()
 
-    run_tokenize(args.directory, process_count=args.num_workers)
+    do_print = not args.dont_print
+    run_tokenize(args.files_or_dirs, process_count=args.num_workers, do_print=do_print)
 
     success = True
     return success
@@ -267,11 +300,14 @@ def parse_cl_args():
     )
 
     argParser.add_argument(
-        'directory',
-        help="directory containing text files that are to be read\n"
-            "and tokenized"
+        'files_or_dirs', nargs='+',
+        help="files and/or directories containing text files\n"
+            "that are to be read and tokenized. note that this\n"
+            "is not recursive - it only considers the direct\n"
+            "contents of referenced directories."
     )
     argParser.add_argument('--num-workers', default=8, type=int)
+    argParser.add_argument('--dont-print', default=False, action='store_true')
 
     args = argParser.parse_args()
     return args
