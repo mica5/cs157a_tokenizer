@@ -39,7 +39,7 @@ find_words_re = re.compile(
 
 def get_dr_lin_document_contents_local(files_or_dirs=['./documents']):
     for file_or_dir in files_or_dirs:
-        if os.path.exists(file_or_dir):
+        if not os.path.isdir(file_or_dir):
             with open(file_or_dir, 'r') as fr:
                 yield fr.read()
         else:
@@ -274,15 +274,22 @@ def run_tokenize(files_or_dirs, process_count=8, do_print=True):
 
             doc_id__TFIDF_ratio_results.append((documentid, word, tfidf))
 
+    results = [
+        (index_to_word[word_index], number_of_docs_this_word_appears_in, math.log(total_number_of_documents/number_of_docs_this_word_appears_in))
+        for word_index, number_of_docs_this_word_appears_in in word_index_to_doc_count_per_word.most_common()
+    ]
     if do_print:
         print('doc_id__TFIDF_ratio_results (doc_id__TFIDF_ratio_results):', doc_id__TFIDF_ratio_results)
         print('total_number_of_documents (total_number_of_documents):', total_number_of_documents)
         print('total_word_count_all_documents (total_word_count_all_documents):', total_word_count_all_documents)
         print('average number of words per document (total_word_count_all_documents / total_number_of_documents): {:.2f}'.format(total_word_count_all_documents / total_number_of_documents))
 
-        print("word, total number of documents the word appears in, tf-idf (math.log(total_number_of_documents/count))")
-        for word_index, count in word_index_to_doc_count_per_word.most_common():
-            print((index_to_word[word_index], count, math.log(total_number_of_documents/count)))
+        print("word, total number of documents the word appears in, tf-idf (math.log(total_number_of_documents/number_of_docs_this_word_appears_in))")
+        for result in results:
+            print(result)
+
+    return results
+
 
 def run_main():
     args = parse_cl_args()
