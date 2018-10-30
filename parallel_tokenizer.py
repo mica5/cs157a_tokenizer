@@ -36,16 +36,30 @@ find_words_re = re.compile(
 )
 
 
+encodings = 'utf-8 ascii raw_unicode_escape windows-1252'.split()
+
+
+def read_file(file):
+    for encoding in encodings:
+        with open(file, 'r', encoding=encoding) as fr:
+            try:
+                return fr.read()
+            except KeyboardInterrupt:
+                raise
+            except:
+                continue
+    # failed to parse document with any encoding
+    print("failed to read file '{}' with any encoding".format(file))
+    return ''
+
 
 def get_dr_lin_document_contents_local(files_or_dirs=['./documents']):
     for file_or_dir in files_or_dirs:
         if not os.path.isdir(file_or_dir):
-            with open(file_or_dir, 'r') as fr:
-                yield fr.read()
+            yield read_file(file_or_dir)
         else:
             for file in glob(os.path.join(file_or_dir, '*')):
-                with open(file, 'r') as fr:
-                    yield fr.read()
+                yield read_file(file)
 
 def get_dr_lin_document_contents(url='http://xanadu.cs.sjsu.edu/~drtylin/classes/cs157A/Project/temp_data/'):
     resp = requests.get(url)
@@ -59,7 +73,7 @@ def get_dr_lin_document_contents(url='http://xanadu.cs.sjsu.edu/~drtylin/classes
         doc = requests.get(this_url)
         yield doc.content.decode()
 
-def get_contents():
+def get_enron_emails_contents():
     files = subprocess.check_output(
         "ls -1 /Users/mica/java/46b/tests/final/assignment/enron_with_categories/1/*.txt",
         shell=True,
@@ -184,9 +198,11 @@ class Word__idorstr__to_count:
 class Documentid_to_word__idorstr__to_count:
     def __init__(self):
         self.documentid_to_word__idorstr__to_count = dict()
+        self.docid_to_wordcount_this_doc = dict()
 
-    def add_document(self, docid, word__idorstr__to_count):
+    def add_document(self, docid, word__idorstr__to_count, total_word_count_this_document):
         self.documentid_to_word__idorstr__to_count[docid] = word__idorstr__to_count.word__idorstr__to_count
+        self.docid_to_wordcount_this_doc[docid] = total_word_count_this_document
 
     def increment(self, docid, word__idorstr):
 
@@ -198,14 +214,14 @@ class Documentid_to_word__idorstr__to_count:
         else:
             self.documentid_to_word__idorstr__to_count[docid][word__idorstr] = 1
 
-def run_tokenize(files_or_dirs, process_count=8, do_print=True):
+def run_tokenize(
+    files_or_dirs, process_count=8, do_print=True, content_generator=get_contents_simple(),
+    print_progress_int=-1,
+):
     # word_index_to_doc_count_per_word is {word index: number of documents the word appears in}.
     word_index_to_doc_count_per_word = Counter()
     total_number_of_documents = 0
     word_to_index = dict()
-    # content_generator = get_contents()
-    # content_generator = get_dr_lin_document_contents()
-    content_generator = get_dr_lin_document_contents_local(files_or_dirs=files_or_dirs)
 
     workers = list()
     pool = Pool(processes=process_count)
@@ -237,9 +253,13 @@ def run_tokenize(files_or_dirs, process_count=8, do_print=True):
         had_more_work = create_new_worker(content_generator, word_to_index, pool, workers, document_id, word__idorstr__to_count)
         if had_more_work:
             total_number_of_documents += 1
+
+        if print_progress_int > 0 and total_number_of_documents % print_progress_int == 0:
+            print("processed {} documents so far".format(total_number_of_documents))
+
         # found_indices is a set
         found_indices, new_found_words, total_word_count_this_document, document_id, word__idorstr__to_count = worker.get()
-        documentid_to_word__idorstr__to_count.add_document(document_id, word__idorstr__to_count)
+        documentid_to_word__idorstr__to_count.add_document(document_id, word__idorstr__to_count, total_word_count_this_document)
 
         total_word_count_all_documents += total_word_count_this_document
         i = update_documents_per_term(
@@ -260,22 +280,34 @@ def run_tokenize(files_or_dirs, process_count=8, do_print=True):
 
     # Make a table of tokens where the tuple is (doc_id, TFIDF ratio).
     doc_id__TFIDF_ratio_results = list()
-    for documentid, word__idorstr__to_count in documentid_to_word__idorstr__to_count.documentid_to_word__idorstr__to_count.items():
-        for word__idorstr, term_frequency in word__idorstr__to_count.items():
+    for documentid, word__idorstr__to_count__this_doc in documentid_to_word__idorstr__to_count.documentid_to_word__idorstr__to_count.items():
+        for word__idorstr, this_word_count_this_document in word__idorstr__to_count__this_doc.items():
             if isinstance(word__idorstr, int):
                 word = index_to_word[word__idorstr]
             else:
                 word = word__idorstr
             word_index = word_to_index[word]
 
+            total_word_count_this_document = documentid_to_word__idorstr__to_count.docid_to_wordcount_this_doc[docid]
+
             # total number of documents the word appears in
-            document_frequency = word_index_to_doc_count_per_word[word_index]
-            tfidf = term_frequency / document_frequency
+            num_docs_with_this_word = word_index_to_doc_count_per_word[word_index]
+
+            tf = this_word_count_this_document / total_word_count_this_document
+            idf = math.log(
+                total_number_of_documents / num_docs_with_this_word,
+                2
+            )
+            tfidf = tf * idf
 
             doc_id__TFIDF_ratio_results.append((documentid, word, tfidf))
 
     results = [
-        (index_to_word[word_index], number_of_docs_this_word_appears_in, math.log(total_number_of_documents/number_of_docs_this_word_appears_in))
+        (
+            index_to_word[word_index],
+            number_of_docs_this_word_appears_in,
+            math.log(total_number_of_documents/number_of_docs_this_word_appears_in, 2),
+        )
         for word_index, number_of_docs_this_word_appears_in in word_index_to_doc_count_per_word.most_common()
     ]
     if do_print:
@@ -288,14 +320,46 @@ def run_tokenize(files_or_dirs, process_count=8, do_print=True):
         for result in results:
             print(result)
 
-    return results
+    return doc_id__TFIDF_ratio_results
+
+
+content_generators = [
+    (
+        "10 local documents from Dr. Lin's site",
+        lambda files_or_dirs: get_dr_lin_document_contents_local(files_or_dirs=files_or_dirs),
+    ),
+    (
+        "Documents from Dr. Lin's site: download from the internet",
+        lambda _: get_dr_lin_document_contents(),
+    ),
+    (
+        "3 simple documents: {}".format(list(get_contents_simple())),
+        lambda _: get_contents_simple(),
+    ),
+    (
+        "Enron emails",
+        lambda _: get_enron_emails_contents(),
+    ),
+]
 
 
 def run_main():
     args = parse_cl_args()
 
     do_print = not args.dont_print
-    run_tokenize(args.files_or_dirs, process_count=args.num_workers, do_print=do_print)
+    print_progress_int = {
+        None: 100,
+        False: -1,
+    }.get(args.print_progress, args.print_progress)
+
+    content_generator = content_generators[args.content-1][1](args.files_or_dirs)
+    run_tokenize(
+        args.files_or_dirs,
+        process_count=args.num_workers,
+        do_print=do_print,
+        content_generator=content_generator,
+        print_progress_int=print_progress_int,
+    )
 
     success = True
     return success
@@ -307,7 +371,7 @@ def parse_cl_args():
     )
 
     argParser.add_argument(
-        'files_or_dirs', nargs='+',
+        'files_or_dirs', nargs='*',
         help="files and/or directories containing text files\n"
             "that are to be read and tokenized. note that this\n"
             "is not recursive - it only considers the direct\n"
@@ -315,6 +379,20 @@ def parse_cl_args():
     )
     argParser.add_argument('--num-workers', default=8, type=int)
     argParser.add_argument('--dont-print', default=False, action='store_true')
+
+    argParser.add_argument(
+        '--print-progress', default=False, type=int, nargs='?',
+        help='print progress. if specified without a parameter, print every\n'
+             '100 files, otherwise specify with a number of files.'
+    )
+    argParser.add_argument(
+        '--content', default=1, type=int,
+        help="One of the following, default 1. If this is specified as something other\n"
+             "than 1, then the files_or_dirs option is irrelevant\n    {}".format('\n    '.join([
+            '{}. {}'.format(i, cg[0])
+            for i, cg in enumerate(content_generators, 1)
+        ]))
+    )
 
     args = argParser.parse_args()
     return args
