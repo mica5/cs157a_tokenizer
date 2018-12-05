@@ -7,6 +7,7 @@ for that).
 
 Version 0.1
 2018-09-20
+Author: Mica Eldridge and Team Titans
 """
 import subprocess
 import math
