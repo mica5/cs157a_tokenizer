@@ -7,7 +7,9 @@ import subprocess
 import spacy
 dictwords = set()
 
-with open('/usr/share/dict/words', 'r') as fr:
+this_dir = os.path.dirname(os.path.abspath(__file__))
+words_file = os.path.join(this_dir, 'words')
+with open(words_file, 'r') as fr:
     for line in fr:
         dictwords.add(line.strip().lower())
 
