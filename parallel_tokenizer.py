@@ -23,9 +23,10 @@ import requests
 from bs4 import BeautifulSoup
 from nltk.stem import PorterStemmer
 
-
-
+# Create singleton porter stemmer
 ps = PorterStemmer()
+
+# Global regex to define a word - Only letters a-zA-z and internal hyphens
 find_words_re = re.compile(
     r'('
         r'[-a-zA-Z]+'
@@ -36,11 +37,11 @@ find_words_re = re.compile(
     r')'
 )
 
-
+# Define multiple encodings to handle different file types
 encodings = 'utf-8 ascii raw_unicode_escape windows-1252'.split()
 
-
 def read_file(file):
+    """ Read a file with varying encodings to until a valid reader can be established """
     for encoding in encodings:
         with open(file, 'r', encoding=encoding) as fr:
             try:
@@ -49,64 +50,17 @@ def read_file(file):
                 raise
             except:
                 continue
-    # failed to parse document with any encoding
-    print("failed to read file '{}' with any encoding".format(file))
-    return ''
+    # Failed to parse document with any encoding
+    print("failed to read file '{}' with any of the given encodings".format(file))
+    return
 
-
-def get_dr_lin_document_contents_local(files_or_dirs=['./documents']):
+def get_file_or_dir_contents(files_or_dirs=['./documents']):
     for file_or_dir in files_or_dirs:
         if not os.path.isdir(file_or_dir):
             yield read_file(file_or_dir)
         else:
             for file in glob(os.path.join(file_or_dir, '*')):
                 yield read_file(file)
-
-def get_dr_lin_document_contents(url='http://xanadu.cs.sjsu.edu/~drtylin/classes/cs157A/Project/temp_data/'):
-    resp = requests.get(url)
-    bs = BeautifulSoup(resp.content.decode(), features='html.parser')
-
-    for a in bs.findAll('a'):
-        this_url = a.attrs['href']
-        if not this_url.endswith('.txt'):
-            continue
-        this_url = urllib.parse.urljoin(url, a.attrs['href'])
-        doc = requests.get(this_url)
-        yield doc.content.decode()
-
-def get_enron_emails_contents():
-    files = subprocess.check_output(
-        "ls -1 /Users/mica/java/46b/tests/final/assignment/enron_with_categories/1/*.txt",
-        shell=True,
-    ).decode().strip().split('\n')
-    for file in files:
-        with open(file, 'r') as fr:
-            content = fr.read()
-            for content_part in content.split('----------------------'):
-                if content_part.startswith(' Forwarded'):
-                    continue
-                if max(map(len, content_part.split('\n'))) < 70:
-                    continue
-                if 'Message-ID' in content_part:
-                    continue
-                if 'From: ' in content_part:
-                    continue
-                lines = list()
-                capturing = False
-                for line in content_part.split('\n'):
-                    if capturing:
-                        lines.append(line)
-                    elif line.startswith('Subject:'):
-                        capturing = True
-                        continue
-                new_content = '\n'.join(lines)
-                yield new_content
-
-def get_contents_simple():
-    yield 'the cat sang'
-    yield 'the dog sang'
-    yield 'the the the'
-
 
 def process_contents(content, word_to_index, document_id, word__idorstr__to_count):
     """
@@ -134,12 +88,12 @@ def process_contents(content, word_to_index, document_id, word__idorstr__to_coun
     return found_indices, new_found_words, total_word_count_this_document, document_id, word__idorstr__to_count
 
 def update_documents_per_term(
-    new_found_words, word_to_index, found_word__indices,
-    word_index_to_doc_count_per_word, i, docid_to_word_indices, document_id,
-):
+        new_found_words, word_to_index, found_word__indices,
+        word_index_to_doc_count_per_word, i, docid_to_word_indices, document_id,
+    ):
     """
-    found_word__indices is a set of the indices of the unique words
-    that were found in a particular document. however, not all words
+    found_word_indices is a set of the indices of the unique words
+    that were found in a particular document. However, not all words
     had indices that corresponded to them at the time the worker
     was working, so this also takes the non-indexed words the worker
     found, gives them an index, and converts those from word counts to
@@ -216,7 +170,7 @@ class Documentid_to_word__idorstr__to_count:
             self.documentid_to_word__idorstr__to_count[docid][word__idorstr] = 1
 
 def run_tokenize(
-    files_or_dirs, process_count=8, do_print=True, content_generator=get_contents_simple(),
+    files_or_dirs, process_count=8, do_print=True, content_generator=get_file_or_dir_contents(),
     print_progress_int=-1,
 ):
     # word_index_to_doc_count_per_word is {word index: number of documents the word appears in}.
@@ -300,24 +254,25 @@ def run_tokenize(
                 2
             )
             tfidf = tf * idf
-
             doc_id__TFIDF_ratio_results.append((documentid, word, tfidf))
 
-    results = [
-        (
-            index_to_word[word_index],
-            number_of_docs_this_word_appears_in,
-            math.log(total_number_of_documents/number_of_docs_this_word_appears_in, 2),
-        )
-        for word_index, number_of_docs_this_word_appears_in in word_index_to_doc_count_per_word.most_common()
-    ]
     if do_print:
+        # List comprehension to generate a tuple for each word (word, df, tfidf)
+        results = [
+            (
+                index_to_word[word_index],
+                number_of_docs_this_word_appears_in,
+                math.log(total_number_of_documents/number_of_docs_this_word_appears_in, 2),
+            ) 
+            for word_index, number_of_docs_this_word_appears_in in word_index_to_doc_count_per_word.most_common()
+        ]
+        print("Results: ")
         print('doc_id__TFIDF_ratio_results (doc_id__TFIDF_ratio_results):', doc_id__TFIDF_ratio_results)
         print('total_number_of_documents (total_number_of_documents):', total_number_of_documents)
         print('total_word_count_all_documents (total_word_count_all_documents):', total_word_count_all_documents)
         print('average number of words per document (total_word_count_all_documents / total_number_of_documents): {:.2f}'.format(total_word_count_all_documents / total_number_of_documents))
-
-        print("word, total number of documents the word appears in, tf-idf (math.log(total_number_of_documents/number_of_docs_this_word_appears_in))")
+        print('Token Data: ')
+        print("Format: (word, unqiue document occurences, tf-idf)")
         for result in results:
             print(result)
 
@@ -326,23 +281,10 @@ def run_tokenize(
 
 content_generators = [
     (
-        "10 local documents from Dr. Lin's site",
-        lambda files_or_dirs: get_dr_lin_document_contents_local(files_or_dirs=files_or_dirs),
-    ),
-    (
-        "Documents from Dr. Lin's site: download from the internet",
-        lambda _: get_dr_lin_document_contents(),
-    ),
-    (
-        "3 simple documents: {}".format(list(get_contents_simple())),
-        lambda _: get_contents_simple(),
-    ),
-    (
-        "Enron emails",
-        lambda _: get_enron_emails_contents(),
-    ),
+        "Generate tokens from any local document or directory of documents",
+        lambda files_or_dirs: get_file_or_dir_contents(files_or_dirs=files_or_dirs),
+    )
 ]
-
 
 def run_main():
     args = parse_cl_args()
@@ -353,9 +295,9 @@ def run_main():
         False: -1,
     }.get(args.print_progress, args.print_progress)
 
-    content_generator = content_generators[args.content-1][1](args.files_or_dirs)
+    content_generator = get_file_or_dir_contents(args.file_or_dir)
     run_tokenize(
-        args.files_or_dirs,
+        args.file_or_dir,
         process_count=args.num_workers,
         do_print=do_print,
         content_generator=content_generator,
@@ -370,34 +312,29 @@ def parse_cl_args():
         description=__doc__,
         formatter_class=argparse.RawTextHelpFormatter,
     )
+    argParser._action_groups.pop()
 
-    argParser.add_argument(
-        'files_or_dirs', nargs='*',
-        help="files and/or directories containing text files\n"
-            "that are to be read and tokenized. note that this\n"
-            "is not recursive - it only considers the direct\n"
-            "contents of referenced directories."
+    required = argParser.add_argument_group('Required arguments')
+    required.add_argument(
+        'file_or_dir', nargs='*',
+        help="A text file or a directory containing text files\n"
+            "that are to be read and tokenized. Note that this\n"
+            "is not recursive - all documents should be at the base level\n"
+            "of the directory."
     )
-    argParser.add_argument('--num-workers', default=8, type=int)
-    argParser.add_argument('--dont-print', default=False, action='store_true')
 
-    argParser.add_argument(
+    options = argParser.add_argument_group('Options')
+    options.add_argument('--num-workers', default=8, type=int)
+    options.add_argument('--dont-print', default=False, action='store_true')
+
+    options.add_argument(
         '--print-progress', default=False, type=int, nargs='?',
-        help='print progress. if specified without a parameter, print every\n'
-             '100 files, otherwise specify with a number of files.'
-    )
-    argParser.add_argument(
-        '--content', default=1, type=int,
-        help="One of the following, default 1. If this is specified as something other\n"
-             "than 1, then the files_or_dirs option is irrelevant\n    {}".format('\n    '.join([
-            '{}. {}'.format(i, cg[0])
-            for i, cg in enumerate(content_generators, 1)
-        ]))
+        help='Print the progress at given file interval. If specified without a parameter, print at every\n'
+             '100 files.'
     )
 
     args = argParser.parse_args()
     return args
-
 
 if __name__ == '__main__':
     success = run_main()
