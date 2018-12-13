@@ -27,6 +27,7 @@ additional library setup is as follows:
 and called with pip3 insated of pip)
 
 $ pip install numpy
+$ pip install nltk
 $ pip install beautifulsoup4 
 $ pip install -U spacy
 $ python -m spacy download en
@@ -43,5 +44,10 @@ $ parallel_tokenizer.py C:/Path/to/Text/Document/Directory
 The whole path should be given. The output is printed to the console
 and can be piped to the screen. 
 
-2-concept:
+Python 2-concept:
 $ 2_Concepts_Project.py C:/Path/To/Directory/Of/Texts
+
+For the Java project:
+In the "Java 2 concept with tfidf" directory, run 
+java TwoConceptReader.jar
+The output can be piped to an file. 
