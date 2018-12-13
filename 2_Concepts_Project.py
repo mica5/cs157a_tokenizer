@@ -15,11 +15,13 @@ import spacy
 
 def run_main():
     args = parse_cl_args()
-
-    files = args.files
-
+    files = list()
+	#account for multiple directories
+    for f in args.files:
+        files.extend(getLocalFiles(f))
+    
     dictwords = set()
-
+    #get the commonly used words
     this_dir = os.path.dirname(os.path.abspath(__file__))
     words_file = os.path.join(this_dir, 'words')
     with open(words_file, 'r') as fr:
@@ -27,7 +29,7 @@ def run_main():
             dictwords.add(line.strip().lower())
 
     nlp = spacy.load('en')
-
+    print('Starting 2-concept processing...')
     # can consider only directly-adjacent words, or skip grams. currently it's just considering directly adjacent words.
     # %%time
     c = Counter()
@@ -61,14 +63,10 @@ def run_main():
 
     print(c.most_common(500))
 
-    for l in c.most_common():
-        t, c = l
-        if 'neural' in t:
-            print(l)
-
     success = True
     return success
 
+#parse command line arguments
 def parse_cl_args():
 
     argParser = argparse.ArgumentParser(
@@ -80,6 +78,18 @@ def parse_cl_args():
 
     args = argParser.parse_args()
     return args
+
+	
+#takes the directory passed by command line and creates a 
+#list of file paths to work with. 
+def getLocalFiles(dirName):
+    list_Files = os.listdir(dirName)
+    file_objs  = list()
+    for filename in list_Files:
+        fullPath=os.path.join(dirName,filename)
+        file_objs.append(fullPath)
+        
+    return file_objs
 
 
 if __name__ == '__main__':
